@@ -54,6 +54,17 @@ export default function Home({
   const [verificationCode, setVerificationCode] = useState<string>("");
   const [isVerificationSent, setVerificationSent] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [token, setToken] = useState(null);
+
+  // 定义 handleCopy 函数，复制存储在状态中的 token
+  const handleCopy = () => {
+    if (token) {
+      navigator.clipboard.writeText(token).then(() => {
+        // 这里可以添加一些复制成功后的处理，例如显示一个通知
+        notify("复制成功")
+      });
+    }
+  };
 
   /**
    * Processes a claim to the faucet
@@ -67,16 +78,18 @@ export default function Home({
         const response = await axios.post("http://194.163.137.80:3002/api/send_verification_code", { email: address }, { withCredentials: true });
         console.log("Server Response:", response.data);
         if (response.data.status === 1) {
-          notify("验证码已发送至您的邮箱，请检查并输入")
+          // notify("验证码已发送至您的邮箱，请检查并输入")
+          notify(response.data.message)
           setVerificationSent(true);
           // setStatusMessage("验证码已发送至您的邮箱，请检查并输入");
         } else {
-          notify("发送验证码失败，请重试")
+          // notify("发送验证码失败，请重试")
+          notify(response.data.message)
           // setStatusMessage("发送验证码失败，请重试");
         }
       } catch (error) {
         console.error(error);
-        notify("网络错误，请稍后重试")
+        notify("未知错误")
         // setStatusMessage("网络错误，请稍后重试");
       }
     } else {
@@ -87,17 +100,19 @@ export default function Home({
           code: verificationCode 
         });
         console.log("Server Response:", response.data);
-        console.log("Server Response:", response.data);
         if (response.data.status === 1) {
-          notify("邮箱成功收到token")
-          console.log("Server Response:", response.data);
+          // notify("邮箱成功收到token")
+          notify(response.data.message)
+          setToken(response.data.token); // 假设 token 存储在 response.data.token 中
+          setClaimed(true); // 标记为已领取
         } else {
-          notify("验证码不正确，请重试")
+          // notify("验证码不正确，请重试")
+          notify(response.data.message)
           // setStatusMessage("验证码不正确，请重试");
         }
       } catch (error) {
         console.error(error);
-        notify("网络错误，请稍后重试")
+        notify("未知错误")
         // setStatusMessage("网络错误，请稍后重试");
       }
     }
@@ -142,8 +157,54 @@ export default function Home({
                     ? "You have successfully claimed tokens. You can request again in 24 hours."
                     : "You have already claimed tokens today. Please try again in 24 hours."}
                 </p>
-                <button className={styles.button__main} disabled>
-                  Tokens Already Claimed
+                {token && (
+                  <div style={{ marginTop: '20px', marginBottom: '20px' }}> {/* 添加 marginTop 和 marginBottom 样式 */}
+                    <div style={{ marginTop: '20px', marginBottom: '10px' }}>
+                      <p>您已成功获取 API Key: </p>
+                    </div>
+                    <div><p style={{
+                      color: '#333', // 字体颜色
+                      backgroundColor: '#f4f4f4', // 背景颜色
+                      padding: '10px', // 内边距
+                      borderRadius: '5px', // 圆角
+                      fontFamily: 'Monaco, monospace', // 字体
+                      wordBreak: 'break-all', // 自动换行
+                    }}
+                  >
+                      {token}</p></div>
+
+                    <div style={{ marginTop: '10px', marginBottom: '10px' }}>
+                      <p>接口地址: </p>
+                    </div>
+                    <div><p style={{
+                      color: '#333', // 字体颜色
+                      backgroundColor: '#f4f4f4', // 背景颜色
+                      padding: '10px', // 内边距
+                      borderRadius: '5px', // 圆角
+                      fontFamily: 'Monaco, monospace', // 字体
+                      wordBreak: 'break-all', // 自动换行
+                    }}
+                  >
+                      https://openfox.cloud</p></div>
+
+                    <div style={{ marginTop: '10px', marginBottom: '10px' }}>
+                      <p>可用余额: $1.00</p>
+                    </div>
+                    
+                  </div>
+
+                  
+
+                  
+                )}
+                <button className={styles.button__main}
+                  // 定义 handleCopy 函数，复制存储在状态中的 token
+                  onClick={() => {
+                    handleCopy();
+                    // processClaim();
+                  }}
+                >
+                  Click to Copy Token
                 </button>
               </div>
             ) : (

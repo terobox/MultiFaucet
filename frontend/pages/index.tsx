@@ -11,36 +11,14 @@ import { hasClaimed } from "pages/api/claim/status"; // Claim status
 import { signIn, getSession, signOut } from "next-auth/client"; // Auth
 
 /**
- * Check if a provided address is valid
- * @param {string} address to check
- * @returns {boolean} validity
- */
-function isValidAddress(address: string): boolean {
-  try {
-    // Check if address is valid + checksum match
-    ethers.utils.getAddress(address);
-  } catch {
-    // If not, return false
-    return false;
-  }
-
-  // Else, return true
-  return true;
-}
-
-/**
  * Checks if a provider address or ENS name is valid
  * @param {string} address to check
  * @returns {boolean} validity
  */
 export function isValidInput(address: string): boolean {
-  // Check if ENS name
-  if (~address.toLowerCase().indexOf(".eth")) {
-    return true;
-  }
-
-  // Else, check if valid general address
-  return isValidAddress(address);
+  // Check if valid email address
+  const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailPattern.test(address);
 }
 
 export default function Home({
@@ -55,8 +33,9 @@ export default function Home({
     query: { addr },
   } = useRouter();
   // Fill prefilled address
-  const prefilledAddress: string = addr && typeof addr === "string" ? addr : "";
 
+  const prefilledAddress: string = addr && typeof addr === "string" ? addr : "";
+  const notify = (title:string)=>toast(title)
   // Claim address
   const [address, setAddress] = useState<string>(prefilledAddress);
   // Claimed status
@@ -71,28 +50,63 @@ export default function Home({
   // Collect details about addresses
   const { networkCount, sortedAddresses } = getAddressDetails();
 
+  // 增加新的状态
+  const [verificationCode, setVerificationCode] = useState<string>("");
+  const [isVerificationSent, setVerificationSent] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string>("");
+
   /**
    * Processes a claim to the faucet
    */
   const processClaim = async () => {
-    // Toggle loading
     setLoading(true);
-
-    try {
-      // Post new claim with recipient address
-      await axios.post("/api/claim/new", { address, others: claimOther });
-      // Toast if success + toggle claimed
-      toast.success("Tokens dispersed—check balances shortly!");
-      setClaimed(true);
-      setFirstClaim(true);
-    } catch (error: any) {
-      // If error, toast error message
-      toast.error(error.response.data.error);
+  
+    if (!isVerificationSent) {
+      // 发送邮件验证码
+      try {
+        const response = await axios.post("http://194.163.137.80:3002/api/send_verification_code", { email: address }, { withCredentials: true });
+        console.log("Server Response:", response.data);
+        if (response.data.status === 1) {
+          notify("验证码已发送至您的邮箱，请检查并输入")
+          setVerificationSent(true);
+          // setStatusMessage("验证码已发送至您的邮箱，请检查并输入");
+        } else {
+          notify("发送验证码失败，请重试")
+          // setStatusMessage("发送验证码失败，请重试");
+        }
+      } catch (error) {
+        console.error(error);
+        notify("网络错误，请稍后重试")
+        // setStatusMessage("网络错误，请稍后重试");
+      }
+    } else {
+      // 验证用户输入的验证码
+      try {
+        const response = await axios.post("http://194.163.137.80:3002/api/verify_code", { 
+          email: address, 
+          code: verificationCode 
+        });
+        console.log("Server Response:", response.data);
+        console.log("Server Response:", response.data);
+        if (response.data.status === 1) {
+          notify("邮箱成功收到token")
+          console.log("Server Response:", response.data);
+        } else {
+          notify("验证码不正确，请重试")
+          // setStatusMessage("验证码不正确，请重试");
+        }
+      } catch (error) {
+        console.error(error);
+        notify("网络错误，请稍后重试")
+        // setStatusMessage("网络错误，请稍后重试");
+      }
     }
-
-    // Toggle loading
+  
     setLoading(false);
   };
+
+  // 检查复选框
+  const [isChecked, setIsChecked] = useState(true);  // 默认值设置为 true
 
   return (
     <Layout>
@@ -100,137 +114,94 @@ export default function Home({
       <div className={styles.home__cta}>
         <div>
           <a
-            href="https://paradigm.xyz"
+            href="https://openfox.cloud/"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Image src="/logo.svg" height="42.88px" width="180px" />
+            <Image src="/logo.png" height="42.88px" width="180px" />
           </a>
         </div>
-        <h1>Bootstrap your testnet wallet</h1>
-        <span>
-          MultiFaucet funds a wallet with{" "}
-          <TokenLogo name="ETH" imageSrc="/tokens/eth.png" />
-          , <TokenLogo name="wETH" imageSrc="/tokens/weth.png" />,
-          <TokenLogo name="DAI" imageSrc="/tokens/dai.svg" />, and{" "}
-          <TokenLogo name="NFTs" imageSrc="/tokens/punks.png" /> across{" "}
-          {`${networkCount} `}
-          testnet networks, at once.
-        </span>
+        <h1>ChatGPT API Faucet</h1>
       </div>
 
       {/* Claim from facuet card */}
       <div className={styles.home__card}>
-        {/* Card title */}
-        <div className={styles.home__card_title}>
-          <h3>Request Tokens</h3>
-        </div>
+      {/* Card title */}
+      <div className={styles.home__card_title}>
+        <h3>Request Tokens</h3>
+      </div>
 
-        {/* Card content */}
-        <div className={styles.home__card_content}>
-          {!session ? (
-            // If user is unauthenticated:
-            <div className={styles.content__unauthenticated}>
-              {/* Reasoning for Twitter OAuth */}
-              <p>
-                To prevent faucet botting, you must sign in with Twitter. We
-                request{" "}
-                <a
-                  href="https://developer.twitter.com/en/docs/apps/app-permissions"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  read-only
-                </a>{" "}
-                access.
-              </p>
+      {/* Card content */}
+      <div className={styles.home__card_content}>
+        {!session ? (
+          <div className={styles.content__authenticated}>
+            {claimed ? (
+              <div className={styles.content__claimed}>
+                <p>
+                  {firstClaim
+                    ? "You have successfully claimed tokens. You can request again in 24 hours."
+                    : "You have already claimed tokens today. Please try again in 24 hours."}
+                </p>
+                <button className={styles.button__main} disabled>
+                  Tokens Already Claimed
+                </button>
+              </div>
+            ) : (
+              <div className={styles.content__unclaimed}>
+                <p>Enter your email address to receive a ChatGPT API token:</p>
 
-              {/* Sign in with Twitter */}
-              <button
-                className={styles.button__main}
-                onClick={() => signIn("twitter")}
-              >
-                Sign In with Twitter
-              </button>
-            </div>
-          ) : (
-            // If user is authenticated:
-            <div className={styles.content__authenticated}>
-              {claimed ? (
-                // If user has already claimed once in 24h
-                <div className={styles.content__claimed}>
-                  <p>
-                    {firstClaim
-                      ? "You have successfully claimed tokens. You can request again in 24 hours."
-                      : "You have already claimed tokens today. Please try again in 24 hours."}
-                  </p>
+                {/* 根据 isVerificationSent 状态切换输入框 */}
+                <input
+                  type="text"
+                  placeholder={isVerificationSent ? "输入验证码" : "support@openfox.cloud"}
+                  value={isVerificationSent ? verificationCode : address}
+                  onChange={(e) => isVerificationSent ? setVerificationCode(e.target.value) : setAddress(e.target.value)}
+                />
 
+                <div className={styles.content__unclaimed_others}>
                   <input
-                    type="text"
-                    placeholder="0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"
-                    disabled
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => setIsChecked((previous) => !previous)}
                   />
-                  <button className={styles.button__main} disabled>
-                    Tokens Already Claimed
-                  </button>
+                  <label>
+                    I promise not to abuse the API.
+                  </label>
                 </div>
-              ) : (
-                // If user has not claimed in 24h
-                <div className={styles.content__unclaimed}>
-                  {/* Claim description */}
-                  <p>Enter your Ethereum address to receive tokens:</p>
 
-                  {/* Address input */}
-                  <input
-                    type="text"
-                    placeholder="0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                  />
+                {statusMessage && <p>{statusMessage}</p>}
 
-                  {/* Other networks checkbox */}
-                  <div className={styles.content__unclaimed_others}>
-                    <input
-                      type="checkbox"
-                      value={claimOther.toString()}
-                      onChange={() => setClaimOther((previous) => !previous)}
-                    />
-                    <label>
-                      Drip on additional networks (besides Rinkeby, Ropsten,
-                      Kovan, and Görli)
-                    </label>
-                  </div>
-
-                  {isValidInput(address) ? (
-                    // If address is valid, allow claiming
+                {isValidInput(address) ? (
+                  isChecked ? (
                     <button
                       className={styles.button__main}
                       onClick={processClaim}
                       disabled={loading}
                     >
-                      {!loading ? "Claim" : "Claiming..."}
+                      {!loading ? (isVerificationSent ? "验证" : "索取验证码") : "处理中..."}
                     </button>
                   ) : (
-                    // Else, force fix
                     <button className={styles.button__main} disabled>
-                      {address === ""
-                        ? "Enter Valid Address"
-                        : "Invalid Address"}
+                      Not Allowed
                     </button>
-                  )}
-                </div>
-              )}
-
-              {/* General among claimed or unclaimed, allow signing out */}
-              <div className={styles.content__twitter}>
-                <button onClick={() => signOut()}>
-                  Sign out @{session.twitter_handle}
-                </button>
+                  )
+                ) : (
+                  <button className={styles.button__main} disabled>
+                    {address === "" ? "输入有效的地址" : "无效的电子邮件地址"}
+                  </button>
+                )}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        ) : (
+          <div className={styles.content__unauthenticated}>
+            {/* Reasoning for Twitter OAuth */}
+            {/* Sign in with Twitter */}
+          </div>
+        )}
       </div>
+    </div>
+
 
       {/* Faucet details card */}
       <div className={styles.home__card}>
@@ -255,165 +226,8 @@ export default function Home({
             <p>You can claim from the faucet once every 24 hours.</p>
           </div>
         </div>
-
-        {/* Network details */}
-        {sortedAddresses.map((network) => {
-          // For each network
-          return (
-            <div key={network.network}>
-              <div className={styles.home__card_content_section}>
-                {/* Network name */}
-                <h4>
-                  {network.formattedName}
-                  {network.connectionDetails ? (
-                    <span>
-                      {" "}
-                      (
-                      <a
-                        href={network.connectionDetails}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        connection details
-                      </a>
-                      ,
-                      {network.autoconnect ? (
-                        // Display network add button if non-default network
-                        <AddNetworkButton autoconnect={network.autoconnect} />
-                      ) : null}
-                      )
-                    </span>
-                  ) : null}
-
-                  {/* Optional depleted status */}
-                  {network.depleted ? (
-                    <span className={styles.home__card_depleted}>
-                      {" "}
-                      (maintenance mode)
-                    </span>
-                  ) : null}
-                </h4>
-
-                {/* Optional network disclaimer */}
-                {network.disclaimer ? <span>{network.disclaimer}</span> : null}
-
-                {Object.entries(network.addresses).map(([name, address]) => {
-                  // For each network address
-                  return (
-                    // Address description: address
-                    <p key={name}>
-                      {name}:{" "}
-                      <TokenAddress
-                        etherscanPrefix={network.etherscanPrefix}
-                        name={name}
-                        address={address}
-                        ERC20={name != "NFTs"}
-                      />
-                    </p>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
       </div>
     </Layout>
-  );
-}
-
-/**
- * Returns button to add network to MetaMask
- * @param {temp: any} autoconnect details
- * @returns {ReactElement}
- */
-function AddNetworkButton({ autoconnect }: { autoconnect: any }): ReactElement {
-  /**
-   * Adds network to MetaMask
-   */
-  const addToMetaMask = async () => {
-    // @ts-expect-error
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [autoconnect],
-    });
-  };
-
-  return (
-    <button onClick={addToMetaMask} className={styles.addNetworkButton}>
-      Add to MetaMask
-    </button>
-  );
-}
-
-/**
- * Returns token address component
- * @param {string} etherscanPrefix of address
- * @param {string?} name if displaying MM connect
- * @param {string} address to display
- * @param {string} ERC20 if asset is an ERC20
- * @returns {ReactElement}
- */
-function TokenAddress({
-  etherscanPrefix,
-  name,
-  address,
-  ERC20,
-}: {
-  etherscanPrefix: string;
-  name?: string;
-  address: string;
-  ERC20: boolean;
-}): ReactElement {
-  /**
-   * Adds token to MetaMask
-   */
-  const addToMetaMask = async () => {
-    // @ts-expect-error
-    await window.ethereum.request({
-      method: "wallet_watchAsset",
-      params: {
-        type: "ERC20",
-        options: {
-          address: address,
-          symbol: name,
-          decimals: 18,
-        },
-      },
-    });
-  };
-
-  return (
-    <span className={styles.address}>
-      <a
-        href={`https://${etherscanPrefix}/address/${address}`}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        {ethers.utils.getAddress(address)}
-      </a>
-      {ERC20 ? <button onClick={addToMetaMask}>Add to MetaMask</button> : null}
-    </span>
-  );
-}
-
-/**
- * Returns token logo component
- * @param {string} name of token
- * @param {string} imageSrc of token image
- * @returns {ReactElement}
- */
-function TokenLogo({
-  name,
-  imageSrc,
-}: {
-  name: string;
-  imageSrc: string;
-}): ReactElement {
-  return (
-    <div className={styles.token}>
-      <img src={imageSrc} alt={`${name}`} />
-      <span>{name}</span>
-    </div>
   );
 }
 
